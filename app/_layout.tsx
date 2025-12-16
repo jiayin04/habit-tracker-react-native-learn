@@ -1,24 +1,51 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
+import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { Stack, useRouter, useRootNavigationState, useSegments } from "expo-router";
+import { useEffect, useState } from "react";
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
+function useProtectedRoute(isAuth: boolean) {
+  const router = useRouter();
+  const segments = useSegments();
+  const navigationState = useRootNavigationState();
+  const [isNavigationReady, setIsNavigationReady] = useState(false);
 
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+  useEffect(() => {
+    if (!navigationState?.key) return;
+    setIsNavigationReady(true);
+  }, [navigationState?.key]);
 
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  useEffect(() => {
+    if (!isNavigationReady) return;
+
+    const inAuthGroup = segments[0] === "auth";
+
+    if (!isAuth && !inAuthGroup) {
+      router.replace("/auth");
+    } else if (isAuth && inAuthGroup) {
+      router.replace("/(tabs)");
+    }
+  }, [isAuth, segments, isNavigationReady]);
+}
+
+function ProtectedStack() {
+  const { isAuthenticated, isLoading } = useAuth();
+  useProtectedRoute(isAuthenticated);
+
+  if (isLoading) {
+    return null; // Or return a loading component
+  }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <Stack>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="auth" options={{ title: "Authentication" }} />
+    </Stack>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <ProtectedStack />
+    </AuthProvider>
   );
 }
