@@ -2,6 +2,8 @@ import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { Stack, useRouter, useRootNavigationState, useSegments } from "expo-router";
 import { useEffect, useState } from "react";
 import Loading from "./loading";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { PaperProvider } from "react-native-paper";
 
 function useProtectedRoute(isAuth: boolean, isLoading: boolean) {
   const router = useRouter();
@@ -46,7 +48,11 @@ function ProtectedStack() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <ProtectedStack />
+      <PaperProvider>
+        <SafeAreaProvider>
+          <ProtectedStack />
+        </SafeAreaProvider>
+      </PaperProvider>
     </AuthProvider>
   );
 }
