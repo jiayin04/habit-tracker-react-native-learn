@@ -12,7 +12,7 @@ type AuthContextType = {
     isLoading: boolean;
 };
 
-const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // PROVIDER
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const signUp = async (email: string, password: string) => {
         try {
-            await account.create(ID.unique(), email, password);
+            await account.create({ userId: ID.unique(), email, password });
             return await signIn(email, password);
         } catch (error) {
             if (error instanceof Error) {
@@ -50,7 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const signIn = async (email: string, password: string) => {
         try {
-            await account.createEmailPasswordSession(email, password);
+            await account.createEmailPasswordSession({ email, password });
             const u = await account.get(); // fetch authenticated user
             setUser(u);
         } catch (error) {
@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const signOut = async () => {
         try {
-            await account.deleteSession("current");
+            await account.deleteSession({ sessionId: "current" });
             setUser(null);
         } catch (error) {
             if (error instanceof Error) {
@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return (
         <AuthContext.Provider
-            value={{ user, signIn, signUp, signOut, isAuthenticated }}
+            value={{ user, signIn, signUp, signOut, isAuthenticated, isLoading }}
         >
             {children}
         </AuthContext.Provider>

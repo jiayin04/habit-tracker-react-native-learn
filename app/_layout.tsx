@@ -1,8 +1,9 @@
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { Stack, useRouter, useRootNavigationState, useSegments } from "expo-router";
 import { useEffect, useState } from "react";
+import Loading from "./loading";
 
-function useProtectedRoute(isAuth: boolean) {
+function useProtectedRoute(isAuth: boolean, isLoading: boolean) {
   const router = useRouter();
   const segments = useSegments();
   const navigationState = useRootNavigationState();
@@ -18,9 +19,9 @@ function useProtectedRoute(isAuth: boolean) {
 
     const inAuthGroup = segments[0] === "auth";
 
-    if (!isAuth && !inAuthGroup) {
+    if (!isAuth && !inAuthGroup && !isLoading) {
       router.replace("/auth");
-    } else if (isAuth && inAuthGroup) {
+    } else if (isAuth && inAuthGroup && !isLoading) {
       router.replace("/(tabs)");
     }
   }, [isAuth, segments, isNavigationReady]);
@@ -28,10 +29,10 @@ function useProtectedRoute(isAuth: boolean) {
 
 function ProtectedStack() {
   const { isAuthenticated, isLoading } = useAuth();
-  useProtectedRoute(isAuthenticated);
+  useProtectedRoute(isAuthenticated, isLoading);
 
   if (isLoading) {
-    return null; // Or return a loading component
+    return <Loading />; // Or return a loading component
   }
 
   return (
