@@ -1,11 +1,10 @@
-import { client, DATABASE_ID, databases, HABITS_COLLECTION_ID, RealTimeResponse } from "@/lib/appwrite";
+import { client, COMPLETIONS_COLLECTION_ID, DATABASE_ID, databases, HABITS_COLLECTION_ID, RealTimeResponse } from "@/lib/appwrite";
 import { useAuth } from "@/lib/auth-context";
-import { Habits } from "@/types/database.type";
+import { HabitCompletion, Habits } from "@/types/database.type";
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
-import { Query } from "react-native-appwrite";
+import { ID, Query } from "react-native-appwrite";
 import { Swipeable } from "react-native-gesture-handler";
 import { Button, Surface, Text } from "react-native-paper";
 
@@ -14,35 +13,43 @@ export default function Index() {
   const { signOut, user } = useAuth();
 
   const [habits, setHabits] = useState<Habits[]>();
+  const [completedHabits, setCompletedHabits] = useState<string[]>();
 
   const swipeableRefs = useRef<{ [key: string]: Swipeable | null }>({});
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchHabits();
-    }, [])
-  );
 
   useEffect(() => {
-    const channel = `databases.${DATABASE_ID}.collections.${HABITS_COLLECTION_ID}.documents`;
-    const habitSubscription = client.subscribe(channel, (response: RealTimeResponse) => {
-      if (response.events.includes("databases.*.collections.*.create")) {
+    const habitsChannel = `databases.${DATABASE_ID}.collections.${HABITS_COLLECTION_ID}.documents`;
+    const habitSubscription = client.subscribe(habitsChannel, (response: RealTimeResponse) => {
+      if (response.events.includes("databases.*.collections.*.documents.*.create")) {
 
         fetchHabits();
       }
-      else if (response.events.includes("databases.*.collections.*.update")) {
+      else if (response.events.includes("databases.*.collections.*.documents.*.update")) {
 
         fetchHabits();
       }
-      else if (response.events.includes("databases.*.collections.*.delete")) {
+      else if (response.events.includes("databases.*.collections.*.documents.*.delete")) {
 
         fetchHabits();
       }
     });
+
+    const completionChannel = `databases.${DATABASE_ID}.collections.${COMPLETIONS_COLLECTION_ID}.documents`;
+    const completionSubscription = client.subscribe(completionChannel, (response: RealTimeResponse) => {
+      if (response.events.includes("databases.*.collections.*.documents.*.create")) {
+
+        fetchTodayCompletions();
+      }
+
+    });
+
     fetchHabits();
+    fetchTodayCompletions();
 
     return () => {
       habitSubscription();
+      completionSubscription();
     }
   }, [user]);
 
@@ -59,10 +66,29 @@ export default function Index() {
     }
   }
 
+  const fetchTodayCompletions = async () => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const response = await databases.listDocuments({
+        databaseId: DATABASE_ID,
+        collectionId: COMPLETIONS_COLLECTION_ID,
+        queries: [
+          Query.equal("user_id", user?.$id ?? ""),
+          Query.greaterThanEqual("completed_at", today.toISOString(),
+          )],
+      });
+
+      const completions = response.documents as unknown as HabitCompletion[];
+      setCompletedHabits(completions.map((c) => c.habit_id));
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
   const handleDeleteHabits = async (documentId: string) => {
     try {
-      setHabits((prev) => prev?.filter((habit) => habit.$id !== documentId));
-
       await databases.deleteDocument({
         databaseId: DATABASE_ID,
         collectionId: HABITS_COLLECTION_ID,
@@ -74,6 +100,39 @@ export default function Index() {
     }
   }
 
+  const handleCompleteHabits = async (id: string) => {
+    if (!user || completedHabits?.includes(id)) return;
+
+    try {
+      const currDate = new Date().toISOString();
+
+      await databases.createDocument({
+        databaseId: DATABASE_ID, collectionId: COMPLETIONS_COLLECTION_ID, documentId: ID.unique(), data: {
+          habit_id: id,
+          user_id: user?.$id,
+          completed_at: currDate,
+        }
+      });
+
+      const habit = habits?.find((h) => h.$id === id);
+      if (!habit) return;
+
+      await databases.updateDocument({
+        databaseId: DATABASE_ID, collectionId: HABITS_COLLECTION_ID, documentId: id, data: {
+          streak_count: habit.streak_count + 1,
+          last_completed: currDate,
+        }
+      })
+
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  const isHabitCompleted = (habitID: string) => {
+    return completedHabits?.includes(habitID);
+  }
+
   const renderLeftActions = () => {
     return (
       <View style={style.swapActionRight}>
@@ -82,10 +141,17 @@ export default function Index() {
     );
   }
 
-  const renderRightActions = () => {
+  const renderRightActions = (habitID: string) => {
     return (
       <View style={style.swapActionLeft}>
-        <MaterialCommunityIcons name="check-circle-outline" size={32} color={"#fff"} />
+        {isHabitCompleted(habitID) ?
+          (
+            <Text style={{color: "#fff"}}>Completed!</Text>
+          )
+          : (
+            <MaterialCommunityIcons name="check-circle-outline" size={32} color={"#fff"} />
+          )
+        }
       </View>
     );
   }
@@ -113,16 +179,18 @@ export default function Index() {
               overshootLeft={false}
               overshootRight={false}
               renderLeftActions={renderLeftActions}
-              renderRightActions={renderRightActions}
+              renderRightActions={() => renderRightActions(habit.$id)}
               onSwipeableOpen={(direction) => {
                 if (direction === "left") {
                   handleDeleteHabits(habit.$id);
+                } else if (direction === "right") {
+                  handleCompleteHabits(habit.$id);
                 }
 
                 swipeableRefs.current[habit.$id]?.close();
               }}
             >
-              <Surface style={style.card}>
+              <Surface style={[style.card, isHabitCompleted(habit.$id) && style.cardCompleted]}>
                 <View style={style.cardContent}>
                   <Text style={style.cardTitle}>
                     {habit.title}
@@ -184,6 +252,10 @@ const style = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 4,
+  },
+
+  cardCompleted: {
+    opacity: 0.6,
   },
 
   cardContent: {
